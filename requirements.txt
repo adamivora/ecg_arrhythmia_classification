@@ -1,0 +1,17 @@
+torch
+numpy
+scipy
+scikit-learn
+pandas
+tslearn
+tqdm
+neurokit2==0.0.39
+torchvision
+plotly
+psutil
+requests
+xgboost
+joblib
+h5py
+onnxmltools
+skl2onnx
