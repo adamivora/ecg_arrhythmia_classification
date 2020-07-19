@@ -1,2 +1,2 @@
 from .resnet import *
-from .recurrent import *
+from .cnngru import *

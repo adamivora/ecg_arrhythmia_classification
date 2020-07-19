@@ -35,7 +35,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 import torch
 import torch.nn as nn
 
-__all__ = ['ResNet', 'resnet18', 'resnet34', 'resnet50', 'resnet101', 'resnet152']
+__all__ = ['ResNet', 'ResNet18', 'ResNet34', 'ResNet50', 'ResNet101', 'ResNet152']
 
 
 def conv3x3(in_planes, out_planes, stride=1, groups=1, dilation=1):
@@ -240,21 +240,21 @@ class ResNet(nn.Module):
         return self._forward_impl(x)
 
 
-def resnet18(**kwargs):
+def ResNet18(**kwargs):
     return ResNet(BasicBlock, [2, 2, 2, 2], **kwargs)
 
 
-def resnet34(**kwargs):
+def ResNet34(**kwargs):
     return ResNet(BasicBlock, [3, 4, 6, 3], **kwargs)
 
 
-def resnet50(**kwargs):
+def ResNet50(**kwargs):
     return ResNet(Bottleneck, [3, 4, 6, 3], **kwargs)
 
 
-def resnet101(**kwargs):
+def ResNet101(**kwargs):
     return ResNet(Bottleneck, [3, 4, 6, 3], **kwargs)
 
 
-def resnet152(**kwargs):
+def ResNet152(**kwargs):
     return ResNet(Bottleneck, [3, 4, 6, 3], **kwargs)

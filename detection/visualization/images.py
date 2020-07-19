@@ -4,9 +4,10 @@ import neurokit2 as nk
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
+import wfdb
 from scipy.signal import resample_poly
 
-from detection.preprocessing.dataset import Cinc2017Dataset
+from detection.preprocessing.dataset import Cinc2017Dataset, Cpsc2018Dataset
 from detection.utils.filesystem import ensure_directory_exists, images_dir
 
 
@@ -15,14 +16,16 @@ class ImageGenerator:
         self.root_dir = root_dir
         self.image_dir = images_dir(root_dir)
 
-    def set_ecg_layout(self, fig, **kwargs):
+    def set_ecg_layout(self, fig, font=None, **kwargs):
+        if font is None:
+            font = dict(
+                family='sans serif',
+                size=12,
+            )
         fig.update_layout(
             xaxis_title='time (s)',
             yaxis_title='voltage (μV)',
-            font=dict(
-                family='sans serif',
-                size=12,
-            ),
+            font=font,
             **kwargs
         )
 
@@ -37,13 +40,23 @@ class ImageGenerator:
         signal = dataset.read_record(row.Record)
         self.plot_signal(signal, row.Fs, f'{row.Record} - {row.Label}')
 
-    def plot_row_resampled(self, dataset, row, fs):
+    def plot_row_resampled(self, dataset, row, fs, font=None):
         signal = dataset.read_record(row.Record)
         resampled = resample_poly(signal, fs, row.Fs)
-        return self.plot_signal(resampled, fs, 10, f'{row.Record} ({fs} Hz)')
+        fig = self.plot_signal(resampled, fs, 10, f'{row.Record} ({fs} Hz)')
+        fig.update_layout(font=font)
+        return fig
 
     def plot_at_sample_rates(self, dataset, row, sample_rates, show=True, save=False):
-        figures = [self.plot_row_resampled(dataset, row, fs) for fs in sample_rates]
+        figures = [
+            self.plot_row_resampled(
+                dataset, row, fs,
+                font=dict(
+                    family='sans serif',
+                    size=24,
+                ))
+            for fs in sample_rates
+        ]
 
         if show:
             for fig in figures:
@@ -98,15 +111,30 @@ class ImageGenerator:
                                 xaxis=dict(range=[0, 20]), yaxis=dict(range=[-5000, 5000]))
             self.save_image(fig, f'qrs_{method}.png', width=900, height=300)
 
+    def pvc_vt_images(self, dataset):
+        pvc_signal = dataset.read_record('A0050') * 1e3
+
+        vt_record = wfdb.rdrecord('cu05', pn_dir='cudb/1.0.0/')
+        vt_signal = vt_record.p_signal.reshape(-1)[93200:] * 1e3
+
+        self.save_image(
+            self.plot_signal(pvc_signal, fs=500, title='Premature ventricular contraction', seconds=10),
+            'pvc.png', width=900, height=300)
+        self.save_image(self.plot_signal(vt_signal, fs=250, title='Ventricular tachycardia', seconds=10),
+                        'vt.png', width=900, height=300)
+
     def generate_images(self):
         """
         Generate all the plots and figures for the thesis `ECG Arrhythmia Detection and Classification`.
         """
+
         print('Generating all plots and images...')
         dataset = Cinc2017Dataset(root_dir=self.root_dir, split='trainval')
         dataset_train = Cinc2017Dataset(root_dir=self.root_dir, split='train')
+        cpsc_dataset = Cpsc2018Dataset(root_dir=self.root_dir)
 
         self.example_ecg(dataset_train)
+        self.pvc_vt_images(cpsc_dataset)
         self.sample_rate_comparison(dataset_train, dataset_train.data.iloc[0])
         self.qrs_detection_pantompkins_vs_neurokit(dataset)
 

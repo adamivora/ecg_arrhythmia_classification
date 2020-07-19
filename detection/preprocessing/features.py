@@ -171,6 +171,7 @@ def extract_features_datasets(datasets, output_dir):
         print(f'Extracting features for dataset {name}...')
 
         df_features = extract_features(dataset)
+        df_features = df_features.replace([np.inf, -np.inf], np.nan).dropna(axis=1, how='all')
         dataset.data = df_features
         output_filename = path.join(output_dir, name + 'Features.pkl')
         df_features.to_pickle(output_filename, protocol=4)

@@ -18,10 +18,16 @@ __all__ = ['Cinc2017Dataset', 'Cpsc2018Dataset', 'PrivateDataset']
 
 class BaseDataset(ABC, Dataset):
     """
-    The base dataset that all the other datasets derive from. Contains useful helper functions.
+    The base dataset that all the other datasets derive from.
+
+    When implementing your own dataset, you have to implement the `read_record` and `get_dataframe` functions.
+    The DataFrame should contain the label_column and record_column. The easiest way to create a custom dataset
+    is to rewrite one of the existing ones (Cinc2017Dataset, Cpsc2018Dataset).
     """
+
     resources = {}
     label_column = 'Label'
+    group_column = None
     record_column = 'Record'
 
     def __init__(self, root_dir, transform=None, data=None, split=None):
@@ -38,9 +44,21 @@ class BaseDataset(ABC, Dataset):
         self.data['LabelCode'] = self.data[self.label_column].cat.codes
 
     def __len__(self):
+        """
+        Returns the number of samples in the dataset.
+
+        :return: int
+        """
         return len(self.get_dataframe())
 
     def __getitem__(self, item):
+        """
+        Allows indexing of the dataset by calling the read_record function.
+        Also supports slice-style iteration (dataset[start:end]).
+
+        :param item: the index of record to get
+        :return: the signal of the selected index
+        """
         if isinstance(item, slice):
             items = (self[i] for i in range(*item.indices(len(self))))
             return tuple(list(x) for x in zip(*items))
@@ -59,31 +77,52 @@ class BaseDataset(ABC, Dataset):
 
     @abstractmethod
     def init(self):
+        """
+        Perform the initial download of the dataset if the dataset is not downloaded. Has to be implemented by
+        the derived class.
+        """
         pass
 
     @abstractmethod
     def read_record(self, record):
+        """
+        Read a recording from the dataset and return it.
+
+        :param record: record that is a value from the `self.get_dataframe()[self.record_column]`
+        :return: the record signal
+        """
         pass
 
-    def get_dataframe(self):
-        return self.data
-
-    def get_label_column(self):
-        return self.label_column
-
     def data_exist(self):
-        return path.exists(self.root_dir)
+        """
+        :return: True if the dataset is extracted in the datasets folder.
+        """
+        return path.exists(path.join(datasets_dir(self.root_dir), f'{self.name()}'))
 
     def dataset_exists(self):
+        """
+        :return: True if the transformed DataFrame exists in the data folder
+        """
         return path.isfile(path.join(data_dir(self.root_dir), f'{self.name()}.pkl'))
 
     def features_exist(self):
+        """
+        :return: True if the dataset has extracted features in the data folder
+        """
         return path.isfile(path.join(data_dir(self.root_dir), f'{self.name()}Features.pkl'))
 
     def name(self):
+        """
+        Returns the name of the dataset, which is assumed to be the name of the derived class.
+
+        :return: str
+        """
         return type(self).__name__
 
     def download(self):
+        """
+        Downloads and extracts the dataset's resources from self.resources.
+        """
         if self.data_exist():
             return
 
@@ -94,7 +133,16 @@ class BaseDataset(ABC, Dataset):
             download_and_extract_archive(url, download_root=download_dir, filename=filename, md5=md5,
                                          remove_finished=False)
 
-        print('Done!')
+        print('Downloading done!')
+
+    def get_dataframe(self):
+        return self.data
+
+    def get_label_column(self):
+        return self.label_column
+
+    def get_group_column(self):
+        return self.group_column
 
     def get_split(self, split):
         return type(self)(root_dir=self.root_dir, transform=self.transform, data=self.data, split=split)
@@ -104,10 +152,13 @@ class BaseDataset(ABC, Dataset):
         return [self.get_split(split) for split in splits]
 
     def get_features(self):
-        features = self.data.drop(columns=['Record', 'Split', 'Fs', self.label_column, 'LabelCode'])
-        labels = self.data[self.label_column]
-        features.replace([np.inf, -np.inf], np.nan, inplace=True)
-        features.dropna(axis=1, how='all', inplace=True)
+        columns_to_drop = ['Record', 'Split', 'Fs', 'LabelCode']
+        for optional_column in [self.label_column, self.group_column]:
+            if optional_column is not None:
+                columns_to_drop.append(optional_column)
+
+        features = self.data.drop(columns=columns_to_drop)
+        labels = self.get_labels()
         return features, labels
 
     def get_signals(self, transform):
@@ -154,7 +205,7 @@ class Cinc2017Dataset(BaseDataset):
         if not self.data_exist():
             self.download()
             src_dir = path.join(datasets_dir(self.root_dir), 'download', 'training2017')
-            shutil.move(src_dir, self.root_dir)
+            shutil.move(src_dir, path.join(datasets_dir(self.root_dir), self.name()))
             print(f'Successfully downloaded dataset {self.name()} to {self.root_dir}.')
 
         if self.features_exist():
@@ -205,7 +256,7 @@ class Cpsc2018Dataset(BaseDataset):
             self.download()
             for dir in ['TrainingSet1', 'TrainingSet2', 'TrainingSet3']:
                 src_dir = path.join(datasets_dir(self.root_dir), 'download', dir)
-                shutil.copytree(src_dir, self.root_dir, dirs_exist_ok=True, copy_function=shutil.move)
+                shutil.copytree(src_dir, path.join(datasets_dir(self.root_dir), self.name()), dirs_exist_ok=True, copy_function=shutil.move)
                 os.rmdir(src_dir)
             print(f'Successfully downloaded dataset {self.name()} to {self.root_dir}.')
 
@@ -234,6 +285,8 @@ class PrivateDataset(BaseDataset):
     """
     The private ECG dataset.
     """
+    group_column = 'Device'
+
     def __init__(self, root_dir='.', transform=None, data=None, split=None):
         super().__init__(root_dir, transform, data, split)
         self.signals = pd.read_pickle(path.join(datasets_dir(self.root_dir), self.name(), 'private_dataset.pkl'))
@@ -248,13 +301,11 @@ class PrivateDataset(BaseDataset):
         else:
             self.data = pd.read_pickle(
                 path.join(datasets_dir(self.root_dir), self.name(), 'private_dataset.pkl')
-            ).filter(['Diagnose', 'Signal'])
-            self.data.columns = ['Label', 'Signal']
-
-            self.data = self.data.filter(['Label'])
+            ).drop(columns=['Signal'])
+            self.data.columns = ['Device', 'Label', 'Record']
             self.data['Fs'] = 200
-            self.data['Record'] = self.data.index
+            # self.data['Record'] = self.data.index
 
     def read_record(self, record):
-        row = self.signals.loc[record]
-        return np.array(row.Signal, dtype=np.float32)
+        row = self.signals[self.signals['Path'] == record].iloc[0]
+        return np.array(row.Signal[:200 * 60], dtype=np.float32)

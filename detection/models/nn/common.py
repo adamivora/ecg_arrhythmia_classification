@@ -20,10 +20,11 @@ def collate_fn(batch):
     :param batch: batch of variable-length signals
     :return: the padded batch
     """
+
     samples, labels, fs = zip(*batch)
 
     # the copy is needed because PyTorch crashes when trying to create a tensor from
-    # an ndarray with a negative stride, which sometimes happens ¯\_(ツ)_/¯
+    # an ndarray with a negative stride ¯\_(ツ)_/¯
     samples = [torch.from_numpy(x.copy()).unsqueeze(dim=1) for x in samples]
 
     samples = pad_sequence(samples, batch_first=True).transpose(1, 2)
@@ -37,6 +38,7 @@ def get_transforms(training=True):
     :param training: True if the training transforms (data augmentation) should be included
     :return:
     """
+
     transform = transforms.Compose([
         Resample(fs=100),
         Standardize()
@@ -57,6 +59,7 @@ def predict(model, dataloader, device):
     :param device: device to use for inference
     :return: all predictions for the `dataloader` samples
     """
+
     all_preds = torch.tensor([], dtype=torch.long, requires_grad=False)
 
     for batch in tqdm(dataloader):
@@ -81,6 +84,7 @@ def train_model(model, opt, criterion, dataloaders, device, clip_gradient_norm=T
     :param epochs: number of epochs to train
     :return: the best trained model by the validation f-score
     """
+
     phases = ['train', 'val']
     best_fscore = 0.0
     best_model = None
@@ -137,7 +141,7 @@ def train_model(model, opt, criterion, dataloaders, device, clip_gradient_norm=T
             # deep copy the model
             if phase == 'val' and epoch_fscore.mean() > best_fscore:
                 best_fscore = epoch_fscore.mean()
-                best_model = deepcopy(model)
+                best_model = deepcopy(model).cpu()
                 print(f'new best fscore {epoch_fscore}')
         time_elapsed = time() - since
         print(f'Epoch {epoch} ended in {time_elapsed:.2f} seconds.')
@@ -146,21 +150,26 @@ def train_model(model, opt, criterion, dataloaders, device, clip_gradient_norm=T
     return best_model
 
 
-def get_dataloader(dataset, batch_size, training):
+def get_dataloader(dataset, batch_size, training, num_workers=8):
     """
     Get a dataloader for a dataset.
 
     :param dataset: dataset of the dataloader
     :param batch_size: batch size of the dataloader
     :param training: True if the dataset is used for training
-    :return:
+    :return: torch.utils.DataLoader
     """
+
     weights = dataset.get_sample_weights()
     return DataLoader(
         dataset=dataset,
         batch_size=batch_size,
         sampler=WeightedRandomSampler(weights, len(weights)) if training else None,
-        collate_fn=collate_fn)
+        collate_fn=collate_fn,
+        num_workers=num_workers,
+        pin_memory=True,
+        shuffle=False
+    )
 
 
 def get_dataloaders(dataset, batch_size):

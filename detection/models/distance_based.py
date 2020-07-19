@@ -5,11 +5,16 @@ from tslearn.utils import to_time_series_dataset
 
 from detection.models.base import BaseModel
 from detection.preprocessing.transforms import Resample, Standardize
-from detection.utils.constants import CV
 from .base import Score
 
 
 def get_distance_based_transforms():
+    """
+    Get the default distance based transforms - resample, sample-wise standardization.
+
+    :return: a torchvision-compatible Transform
+    """
+
     return transforms.Compose([
         Resample(fs=100),
         Standardize()
@@ -20,14 +25,17 @@ class DistanceBasedClassifier(BaseModel):
     """
     Wrapper class for all the distance-based models.
     """
+    cv = False
 
-    def __init__(self, classifier, transform=None, checkpoint=None):
-        self.clf = classifier
+    def __init__(self, classifier, transform=None, cv_folds=5):
+        super().__init__()
+
         if transform is None:
             transform = get_distance_based_transforms()
-        self.transform = transform
 
-        super().__init__(checkpoint)
+        self.clf = classifier
+        self.transform = transform
+        self.cv_folds = cv_folds
 
     def name(self):
         return type(self.clf).__name__
@@ -37,8 +45,8 @@ class DistanceBasedClassifier(BaseModel):
         X = to_time_series_dataset(X)
 
         if cv:
-            score = cross_val_score(self.clf, X, y_true, scoring='f1_macro', cv=CV)
-            return Score(score.mean(), 2 * score.std(), score)
+            score = cross_val_score(self.clf, X, y_true, scoring='f1_macro', cv=self.cv_folds, n_jobs=-1)
+            return Score(score.mean(), score.std(), score)
         else:
             y_pred = self.clf.predict(X)
             return f1_score(y_true, y_pred, average='macro')

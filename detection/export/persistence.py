@@ -1,24 +1,24 @@
-from collections import OrderedDict
-from glob import glob
 from os import path
 
-import joblib
+from detection.utils.filesystem import ensure_directory_exists
 
 
-class ModelPersistence:
-    def __init__(self, models_dir):
-        self.models_dir = models_dir
+def trained_model_exists(model, dataset, models_dir):
+    return path.isfile(get_model_fullname(model, dataset, models_dir))
 
-    def save_models(self, models):
-        for model in models:
-            joblib.dump(model, path.join(self.models_dir, f'{model.name()}.gz'))
 
-    def load_models(self, models):
-        model_dict = OrderedDict((model.name(), model) for model in models)
+def get_model_fullname(model, dataset, models_dir):
+    return path.join(models_dir, f'{dataset.name()}_{model.name()}.gz')
 
-        for filename in glob(path.join(self.models_dir, '*.gz')):
-            name = path.splitext(filename)[0]
-            if name in model_dict:
-                model_dict[name] = joblib.load(filename)
 
-        return model_dict.values()
+def save_model(model, dataset, models_dir):
+    ensure_directory_exists(models_dir)
+    model.save(get_model_fullname(model, dataset, models_dir))
+
+
+def load_model(model, dataset, models_dir):
+    try:
+        return model.load(get_model_fullname(model, dataset, models_dir))
+    except Exception as e:
+        print(f'[ERROR] Cannot load trained model. Original exception: {e}.')
+        return model
